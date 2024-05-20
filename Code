@@ -1,0 +1,252 @@
+## Dept of Neuro
+## Karolinska Institutet
+## 2024 - 05 - 15
+## samson.nivins@gmail.com
+
+##set the working directory
+setwd(".../Screentime_brain/Re_analysis_2023")
+## To access the data - you need to send in a request to ABCD NDA with a project proposal
+# details can be found below
+# (https://nda.nih.gov/general-query.html?q=query=data-structure%20~and~%20searchTerm=sMR%20~and~%20dataSources=ABCD%20Release%204.0%20~and~%20orderBy=shortName%20~and~%20orderDirection=Ascending%20~and~%20resultsView=tiled-view)
+## Due to ABCD policy we cannot release the data publicly but have used original name for replicate of all analysis
+
+==========================================================================================
+# load all the libraries
+packages <- c("ggplot2", "readxl", "dplyr", "tidyr", "ggfortify",  
+              "lme4", "tidyverse", "corrplot", "scales",
+              "nlme", "psych",  "ggpubr", "dslabs", "ggstatsplot",  "effects",
+              "sjPlot", "sjlabelled", "sjmisc", "jtools",
+              "ggthemes", "cowplot", "gridExtra", "ggExtra")
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+#install.packages("BayesFactor")
+==========================================================================================
+## load the screen time files from ABCD 5.0 release
+## for screen time measures filled by children = nt_y_st (load the following files)
+## for screen time measures filled by parents = nt_p_stq (load the following files)
+
+#To calculate average hrs spent per day: baseline per day filled by children
+
+# digital media use at baseline
+screen_b0 <- read_excel("screen_b0.xlsx") # 
+screen_b0$gaming_b0 <- ((screen_b0$screen3_wkdy_y * 5) +
+                          (screen_b0$screen9_wknd_y * 2))/7
+screen_b0$television_b0 <- (((screen_b0$screen1_wkdy_y + screen_b0$screen2_wkdy_y) * 5) +
+                              ((screen_b0$screen7_wknd_y + screen_b0$screen8_wknd_y) * 2))/7
+screen_b0$socialmedia_b0 <- (((screen_b0$screen4_wkdy_y + screen_b0$screen5_wkdy_y + screen_b0$screen_wkdy_y) * 5) +
+                               ((screen_b0$screen10_wknd_y + screen_b0$screen11_wknd_y + screen_b0$screen12_wknd_y) * 2))/7
+
+screen_b0$gaming_mature_b0 <- screen_b0$screen13_y #How often do you play mature-rated video games 
+screen_b0$movies_mature_b0 <- screen_b0$screen14_y # R rated movies
+
+# total time spent by child on digital media
+screen_b0$screentime_b0 <- (screen_b0$gaming_b0 + screen_b0$television_b0 + screen_b0$socialmedia_b0)
+
+### do repeat the same for other time points (T0, T1, T2, T3, T4)
+## follow-up time points are coded in varibale name : eventname as baseline_year, 1_year_follow...
+
+## however, from timepoint T2 the format was changed to continous, therefore, to hormonize to fit to T0 and T1
+## Do follow this:
+# The re-coding involved transforming the continuous response options into the following categories: 
+# none -‘0’, < 30 minutes -‘0.25’, 30 minutes – ‘0.5’, 1 hour – ‘1’, 1.15 hours – ‘1.25’, 
+# 1.30 hours – ‘1.5’, 2 hours – ‘2’, 2.15 hours – ‘2.25’, 2.30 hours – ‘2.5’, 3 hours – ‘3’, 
+# 3.15 hours – ‘3.25’, 3.30 hours – ‘3.5’, and > 4 hours – ‘4’.
+
+=========================================================================================
+# Parents report of children use of digital media
+screen_b0_p <- read_excel("Screen_b0_P.xlsx") #
+screen_b0_p$screen_time_p_wkdy_hr_conv <- screen_b0_p$screentime1_p_minutes/60
+screen_b0_p$screen_time_p_wkdy_hrs <- screen_b0_p$screen_time_p_wkdy_hr_conv + screen_b0_p$screentime1_p_hours
+screen_b0_p$screen_time_p_wknd_hr_conv <- screen_b0_p$screentime2_p_minutes/60
+screen_b0_p$screen_time_p_wknd_hrs <- screen_b0_p$screen_time_p_wknd_hr_conv + screen_b0_p$screentime2_p_hours 
+
+screen_b0_p$screen_time_p_hrs_perday <- ((screen_b0_p$screen_time_p_wkdy_hrs * 5) + 
+                                           (screen_b0_p$screen_time_p_wknd_hrs * 2))/7
+
+=========================================================================================
+## load the brain metrics files from ABCD 5.0 release
+## for surface area by DK atlas = mri_y_smr_area_dsk (load the following files)
+## for volumes = mri_y_smr_vol_aseg (load the following files)
+
+## loading brain regions for T0
+read.smr.area <- read.csv('mri_y_smr_area_dsk.csv')
+read.smr.area$total_csa <- read.smr.area$smri_area_cdk_total
+
+read.smr.subvol <- read.csv('mri_y_smr_vol_aseg.csv')
+
+read.smr.subvol$straitum <- (read.smr.subvol$smri_vol_scs_caudatelh  + read.smr.subvol$smri_vol_scs_caudaterh  +  read.smr.subvol$smri_vol_scs_putamenlh  +  read.smr.subvol$smri_vol_scs_putamenrh  + 
+                               read.smr.subvol$smri_vol_scs_aal  + read.smr.subvol$smri_vol_scs_aar)
+
+read.smr.subvol$cerebellum <- (read.smr.subvol$smri_vol_scs_crbwmatterlh  + read.smr.subvol$smri_vol_scs_crbwmatterrh  +  
+                                 read.smr.subvol$smri_vol_scs_crbcortexlh  + read.smr.subvol$smri_vol_scs_crbcortexrh)
+
+read.smr.subvol$whole.brain.vol <- read.smr.subvol$smri_vol_scs_wholeb
+### do repeat the same for for other time points (T0, T2, T4)
+## follow-up time points are coded in varibale name : eventname as baseline_year, 1_year_follow...
+
+==========================================================================================
+
+screen.brain <- read_excel("sMRI_scrn_bas.xlsx") # selected one child per family based on previous paper
+screen.brain.sel <- select(screen.brain, c('GUID','C1', 'C2', 'C3', 'C4', 'C5', 'C6','C7', 'C8', 'C9', 'C10',
+                                           'C11', 'C12', 'C13', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19', 'C20', 
+                                           'name', 'pgs', 'interview_age', 'SEX', 'site_id_l', 'g', 'ses')) # 
+
+### pgs = Genetic pre-disposition for cognitive performance; C1:C20 (first 20 PCs for ancestry)
+### PGS and SES data used in the study where based on previous study from our group by Sauce et al.
+## https://www.nature.com/articles/s41598-022-11341-2#Sec23
+
+==========================================================================================
+### Understanding the developmental trait
+# for plots
+model1 <- lme4::lmer((cerebellum) ~  (poly(Age.yrs,2, raw=TRUE)) +  pgs_scaled + ses + 
+                         C1 + C2 + C3  +  C4 + C5 + C6 + C7 + C8 + C9 + C10  + C11 + C12 + C13 + C14 + C15 + C16 + C17 + 
+                         C18 + C19 + C20 + 
+                         ( 1 + Time| GUID ) +
+                         (1|site_id_l), data = scn.brainT4, control=lmerControl(check.nobs.vs.nlev="ignore", check.nobs.vs.nRE="ignore"),
+                       REML= FALSE)
+summary(model1)
+parameters::model_parameters(model1, effects = "fixed",ci_method = "satterthwaite")
+
+p2 <- sjPlot::plot_model(model1, type="eff", terms=c( "Age.yrs  [all]" ), colors = "blue") +
+  theme_classic()
+p2
+
+==========================================================================================
+##### DM use on subcortical brain regions
+Model.2 <- lme4::lmer(scale(cerebellum) ~   (poly(Time,2, raw=TRUE) * socialmedia_avg.4) +  pgs_scaled + ses_scaled + C1 + C2 + C3 +
+                          C4 + C5 + C6 + C7 + C8 + C9 + C10  + C11 + C12 + C13 + C14 + C15 + C16 + C17 + C18 + C19 + C20 +
+                          (poly(Time,2, raw=TRUE) * pgs_scaled * socialmedia_avg.4) + whole.brain.vol +
+                          (poly(Time,2, raw=TRUE) * ses_scaled * socialmedia_avg.4) + age.centered +
+                          ( 1 + poly(Time,2, raw=TRUE)| GUID) + SEX + 
+                          (1|site_id_l), data = scn.brainT4, control=lmerControl(check.nobs.vs.nlev="ignore", check.nobs.vs.nRE="ignore"),
+                        REML= FALSE)
+parameters::model_parameters(Model.2, effects = "fixed", ci_method = "satterthwaite")
+xyz <- ggpredict(Model.2, terms = c("Time", "socialmedia_avg.4 [quart2]")) 
+plot(xyz) +
+  theme_classic()
+
+##### DM use on global CSA
+Model.3 <- lme4::lmer(scale(total_csa) ~   (poly(Time,2, raw=TRUE) * socialmedia_avg.4) +  pgs_scaled + ses_scaled + C1 + C2 + C3 +
+                        C4 + C5 + C6 + C7 + C8 + C9 + C10  + C11 + C12 + C13 + C14 + C15 + C16 + C17 + C18 + C19 + C20 +
+                        (poly(Time,2, raw=TRUE) * pgs_scaled * socialmedia_avg.4) + 
+                        (poly(Time,2, raw=TRUE) * ses_scaled * socialmedia_avg.4) + age.centered +
+                        ( 1 + poly(Time,2, raw=TRUE)| GUID) + SEX + 
+                        (1|site_id_l), data = scn.brainT4, control=lmerControl(check.nobs.vs.nlev="ignore", check.nobs.vs.nRE="ignore"),
+                      REML= FALSE)
+parameters::model_parameters(Model.3, effects = "fixed", ci_method = "satterthwaite")
+xyz <- ggpredict(Model.3, terms = c("Time", "socialmedia_avg.4 [quart2]")) 
+plot(xyz) +
+  theme_classic()
+
+==========================================================================================
+##### For sex-specific DM use on brain regions
+Model.4 <- lme4::lmer(scale(cerebellum) ~   (poly(Time,2, raw=TRUE) * socialmedia_avg.4) +  pgs_scaled + ses_scaled + C1 + C2 + C3 +
+                          C4 + C5 + C6 + C7 + C8 + C9 + C10  + C11 + C12 + C13 + C14 + C15 + C16 + C17 + C18 + C19 + C20 +
+                          (poly(Time,2, raw=TRUE) * pgs_scaled * socialmedia_avg.4) + whole.brain.vol +
+                          (poly(Time,2, raw=TRUE) * ses_scaled * socialmedia_avg.4) + age.centered +
+                        (poly(Time,2, raw=TRUE) * pgs_scaled * SEX) +
+                          ( 1 + poly(Time,2, raw=TRUE)| GUID) + 
+                          (1|site_id_l), data = scn.brainT4, control=lmerControl(check.nobs.vs.nlev="ignore", check.nobs.vs.nRE="ignore"),
+                        REML= FALSE)
+parameters::model_parameters(Model.4, effects = "fixed", ci_method = "satterthwaite")
+xyz <- ggpredict(Model.4, terms = c("Time", "socialmedia_avg.4 [quart2]")) 
+plot(xyz) +
+  theme_classic()
+=========================================================================================
+# sensivitity analysis: include children with all three time points
+scn.brain.T4all <- scn.brainT4 %>% group_by(GUID) %>%
+filter(n() == 3)
+dim(scn.brain.T4all)
+
+model.poly <- lme4::lmer(scale(cerebellum) ~  (poly(Time,2, raw=T) * socialmedia_avg.4) +  pgs_scaled + ses_scaled + C1 + C2 + C3 +
+                           C4 + C5 + C6 + C7 + C8 + C9 + C10  + C11 + C12 + C13 + C14 + C15 + C16 + C17 + C18 + C19 + C20 +
+                           (poly(Time,2, raw=T) * pgs_scaled * socialmedia_avg.4) + whole.brain.vol +
+                           (poly(Time,2, raw=T) * ses_scaled * socialmedia_avg.4) + age.centered +
+                           ( 1 + poly(Time,2, raw=T)| GUID) + SEX + 
+                           (1|site_id_l), data = scn.brain.T4all, control=lmerControl(check.nobs.vs.nlev="ignore", check.nobs.vs.nRE="ignore"),
+                         REML= FALSE)
+summary(model.poly)
+parameters::model_parameters(model.poly, effects = "fixed", ci_method = "satterthwaite")
+
+=========================================================================================
+# Understanding the delta
+brain.screen.0 <- merge(DMusage.base,brain.regions.0, by="GUID", all.x=FALSE)
+dim(brain.screen.0)
+brain.screen.0$Age <- brain.screen.0$age_b0
+brain.screen.0$cerebellum.T0 <- brain.screen.0$cerebellum
+
+### two-year fu
+brain.sa.2 <- read_excel("BrainSA.2_year.xlsx")  
+brain.vol.2 <- read_excel("BrainVol.2_year.xlsx")   
+
+brain.metrics.T2 <- merge(brain.sa.2,brain.vol.2, by="GUID", all.x=FALSE)
+dim(brain.metrics.T2)  
+
+brain.metrics.T2$cerebellum.T2 <- brain.metrics.T2$cerebellum
+
+brain.metrics.delta <- merge(brain.screen.0,brain.metrics.T2, by="GUID", all.x=FALSE)
+dim(brain.metrics.delta)
+
+brain.metrics.delta$cerebellum.T2.T0 <- brain.metrics.delta$cerebellum.T2 - brain.metrics.delta$cerebellum.T0
+
+model.delta <- lmer(scale(cerebellum.T2.T0) ~  (socialmedia_b0) +  pgs + ses + C1 + C2 + C3 +
+                      C4 + C5 + C6 + C7 + C8 + C9 + C10  + C11 + C12 + C13 + C14 + C15 + C16 + C17 + C18 + C19 + C20 +
+                      age_b0 + SEX + whole.brain.vol + 
+                      (1|site_id_l), data = brain.metrics.delta, REML= FALSE)
+summary(model.delta)
+parameters::model_parameters(model.delta, effects = "fixed", ci_method = "satterthwaite")
+
+========================================================================================
+### ADHD diagnosis
+ksads_parent_bas <- read_excel("ADHD_KSADS_DSM5.xlsx") # parent ksads
+
+# for adhd-present dsm-tier 1
+ksads_parent_bas$ksads_sust_inat <- ifelse(ksads_parent_bas$ksads_14_76_p == 1 & ksads_parent_bas$ksads_14_77_p == 1, "1", "0")
+ksads_parent_bas$ksads_sust_inat <- as.numeric(ksads_parent_bas$ksads_sust_inat)
+ksads_parent_bas$ksads_easy_dist <- ifelse(ksads_parent_bas$ksads_14_80_p == 1 & ksads_parent_bas$ksads_14_81_p == 1, "1", "0")
+ksads_parent_bas$ksads_easy_dist <- as.numeric(ksads_parent_bas$ksads_easy_dist)
+ksads_parent_bas$ksads_diff_sit <- ifelse(ksads_parent_bas$ksads_14_84_p == 1 & ksads_parent_bas$ksads_14_85_p == 1, "1", "0")
+ksads_parent_bas$ksads_sit_imp <- ifelse(ksads_parent_bas$ksads_diff_sit == 1 | ksads_parent_bas$ksads_14_88_p == 1, "1", "0")
+ksads_parent_bas$ksads_sit_imp <- as.numeric(ksads_parent_bas$ksads_sit_imp)
+
+ksads_parent_bas$adhd_ksads_adhd <- (ksads_parent_bas$ksads_sust_inat + ksads_parent_bas$ksads_easy_dist +
+                                       ksads_parent_bas$ksads_sit_imp + ksads_parent_bas$ksads_14_394_p +
+                                       ksads_parent_bas$ksads_14_395_p + ksads_parent_bas$ksads_14_396_p +
+                                       ksads_parent_bas$ksads_14_397_p + ksads_parent_bas$ksads_14_398_p +
+                                       ksads_parent_bas$ksads_14_399_p + ksads_parent_bas$ksads_14_400_p +
+                                       
+                                       ksads_parent_bas$ksads_14_403_p + ksads_parent_bas$ksads_14_405_p + 
+                                       ksads_parent_bas$ksads_14_406_p + ksads_parent_bas$ksads_14_404_p + 
+                                       ksads_parent_bas$ksads_14_401_p + ksads_parent_bas$ksads_14_407_p + 
+                                       ksads_parent_bas$ksads_14_408_p + ksads_parent_bas$ksads_14_402_p)
+
+ksads_parent_bas$adhd_ksads_adhd_present <- ifelse(ksads_parent_bas$adhd_ksads_adhd >= 6, "1", "0")
+
+# based on past - ADHD
+ksads_parent_bas$ksads_sust_inat_P <- ifelse(ksads_parent_bas$ksads_14_78_p == 1 & ksads_parent_bas$ksads_14_79_p == 1, "1", "0")
+ksads_parent_bas$ksads_sust_inat_P <- as.numeric(ksads_parent_bas$ksads_sust_inat_P)
+ksads_parent_bas$ksads_easy_dist_P <- ifelse(ksads_parent_bas$ksads_14_82_p == 1 & ksads_parent_bas$ksads_14_83_p == 1, "1", "0")
+ksads_parent_bas$ksads_easy_dist_P <- as.numeric(ksads_parent_bas$ksads_easy_dist_P)
+ksads_parent_bas$ksads_diff_sit_P <- ifelse(ksads_parent_bas$ksads_14_86_p == 1 & ksads_parent_bas$ksads_14_87_p == 1, "1", "0")
+ksads_parent_bas$ksads_sit_imp_P <- ifelse(ksads_parent_bas$ksads_diff_sit_P == 1 | ksads_parent_bas$ksads_14_89_p == 1, "1", "0")
+ksads_parent_bas$ksads_sit_imp_P <- as.numeric(ksads_parent_bas$ksads_sit_imp_P)
+
+ksads_parent_bas$adhd_ksads_adhd_sum <- (ksads_parent_bas$ksads_sust_inat_P + ksads_parent_bas$ksads_easy_dist_P +
+                                           ksads_parent_bas$ksads_sit_imp_P + ksads_parent_bas$ksads_14_410_p +
+                                           ksads_parent_bas$ksads_14_411_p + ksads_parent_bas$ksads_14_412_p +
+                                           ksads_parent_bas$ksads_14_413_p + ksads_parent_bas$ksads_14_414_p +
+                                           ksads_parent_bas$ksads_14_415_p + ksads_parent_bas$ksads_14_416_p +
+                                           
+                                           ksads_parent_bas$ksads_14_417_p + ksads_parent_bas$ksads_14_418_p + 
+                                           ksads_parent_bas$ksads_14_419_p + ksads_parent_bas$ksads_14_420_p + 
+                                           ksads_parent_bas$ksads_14_421_p + ksads_parent_bas$ksads_14_422_p + 
+                                           ksads_parent_bas$ksads_14_423_p + ksads_parent_bas$ksads_14_424_p)
+
+ksads_parent_bas$adhd_ksads_adhd_past <- ifelse(ksads_parent_bas$adhd_ksads_adhd_sum >= 6, "1", "0")
+
+ksads_parent_bas$adhd_either.yes <- ifelse(ksads_parent_bas$adhd_ksads_adhd_past == 1 | ksads_parent_bas$adhd_ksads_adhd_present == 1, "1", "0")
